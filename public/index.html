@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <style>
-        :root { --navy-dark: #001e43; --navy-light: #003366; --accent: #00a8ff; }
+        :root { --navy-dark: #001e43; --navy-light: #003366; --accent: #00a8ff; --pale-blue: #a2c2e1; --dark-blue: #2e5a88; }
         
         body { 
             background-color: var(--navy-dark); color: white; font-family: -apple-system, sans-serif; 
@@ -13,11 +13,14 @@
             overflow: hidden; height: 100vh; justify-content: center;
         }
 
-        /* 🔵 CUSTOM BLUE BOARD COLORS */
-        .white-1e1d7 { background-color: #70a1ff !important; } /* Light Blue Squares */
-        .black-3c403 { background-color: #003366 !important; } /* Dark Blue Squares */
+        /* 🔵 PALE & DARK BLUE BOARD THEME */
+        .white-1e1d7 { background-color: var(--pale-blue) !important; } 
+        .black-3c403 { background-color: var(--dark-blue) !important; }
         
-        #myBoard { width: 90vw; max-width: 400px; border: 4px solid #002d62; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        /* Highlight dots for legal moves */
+        .highlight-move { box-shadow: inset 0 0 3px 3px rgba(0, 0, 0, .2); border-radius: 50%; width: 20px; height: 20px; margin: 30%; background: rgba(0,0,0,0.2); }
+
+        #myBoard { width: 90vw; max-width: 400px; border: 4px solid #1e3a5f; border-radius: 8px; }
         
         .info-panel { 
             background: #002d62; padding: 15px; border-radius: 12px; 
@@ -25,35 +28,43 @@
             justify-content: space-between; box-sizing: border-box; border: 1px solid #1e3a5f;
         }
         .timer { font-size: 24px; font-weight: bold; font-family: monospace; color: var(--accent); }
-        #status { margin-top: 10px; font-size: 14px; color: #81a1c1; text-transform: uppercase; letter-spacing: 1px; }
 
-        /* Victory Overlay */
-        #winOverlay {
+        /* Overlays */
+        #overlay, #winOverlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 30, 67, 0.96);
-            display: none; flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(0, 30, 67, 0.98);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
             z-index: 100; text-align: center;
         }
-        .win-card { background: #002d62; padding: 40px; border-radius: 20px; border: 2px solid var(--accent); box-shadow: 0 0 20px var(--accent); }
-        .rematch-btn { 
-            background: var(--accent); color: white; border: none; padding: 15px 40px; 
-            font-size: 18px; font-weight: bold; border-radius: 10px; cursor: pointer; margin-top: 20px;
-            transition: transform 0.2s;
+        #winOverlay { display: none; }
+        .card { background: #002d62; padding: 30px; border-radius: 20px; border: 2px solid var(--accent); width: 80%; max-width: 300px; }
+        .btn { 
+            background: var(--accent); color: white; border: none; padding: 12px 20px; 
+            font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%;
         }
-        .rematch-btn:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
-    <div id="winOverlay">
-        <div class="win-card">
-            <h1 id="winMessage" style="margin: 0; font-size: 32px;">WHITE WINS!</h1>
-            <p style="color: #81a1c1;">Checkmate</p>
-            <button class="rematch-btn" onclick="requestRematch()">RE-MATCH</button>
+    <div id="overlay">
+        <div class="card" id="setupCard">
+            <h2 style="margin-top:0">Match Settings</h2>
+            <p id="waitMsg">Waiting for White to pick time...</p>
+            <div id="whiteControls" style="display:none">
+                <button class="btn" onclick="setTime(600)">10 Mins Each</button>
+                <button class="btn" onclick="setTime(300)">5 Mins Each</button>
+            </div>
         </div>
     </div>
 
-    <h2 style="margin: 0 0 10px 0; letter-spacing: 3px;">NAVY CHESS</h2>
+    <div id="winOverlay">
+        <div class="card">
+            <h1 id="winMessage">WHITE WINS!</h1>
+            <button class="btn" onclick="requestRematch()">RE-MATCH</button>
+        </div>
+    </div>
+
+    <h2 style="margin: 0 0 10px 0; letter-spacing: 2px;">NAVY CHESS</h2>
     
     <div id="myBoard"></div>
 
@@ -73,40 +84,73 @@
         const socket = io();
         var board = null;
         var game = new Chess();
-        
-        // 1. DETERMINE ROLE FROM URL
         const path = window.location.pathname;
         const playerColor = path.includes('black') ? 'b' : 'w';
         
         var whiteTime = 600, blackTime = 600;
         var timerInterval = null;
 
-        // Prevent illegal moves or moving opponent's pieces
+        // 1. SHOW TIME OPTIONS ONLY TO WHITE
+        if(playerColor === 'w') {
+            document.getElementById('whiteControls').style.display = 'block';
+            document.getElementById('waitMsg').style.display = 'none';
+        }
+
+        function setTime(seconds) {
+            socket.emit('set-time', seconds);
+        }
+
+        socket.on('apply-time', (seconds) => {
+            whiteTime = seconds;
+            blackTime = seconds;
+            updateTimerDisplay('whiteTimer', seconds);
+            updateTimerDisplay('blackTimer', seconds);
+            document.getElementById('overlay').style.display = 'none';
+        });
+
+        // 2. MOVE HIGHLIGHTING LOGIC
+        function removeHighlights() {
+            $('#myBoard .square-55d63').children('.highlight-move').remove();
+        }
+
+        function highlightSquare(square) {
+            var $square = $('#myBoard .square-' + square);
+            $square.append('<div class="highlight-move"></div>');
+        }
+
+        function onMouseoverSquare (square, piece) {
+            if (!piece) return;
+            if (piece.search(playerColor) === -1) return;
+
+            var moves = game.moves({ square: square, verbose: true });
+            if (moves.length === 0) return;
+
+            for (var i = 0; i < moves.length; i++) {
+                highlightSquare(moves[i].to);
+            }
+        }
+
+        function onMouseoutSquare () {
+            removeHighlights();
+        }
+
         function onDragStart (source, piece) {
             if (game.game_over()) return false;
-            
-            // Only move your own color
-            if ((playerColor === 'w' && piece.search(/^b/) !== -1) ||
-                (playerColor === 'b' && piece.search(/^w/) !== -1)) return false;
-            
-            // Only move when it's your turn
-            if ((game.turn() === 'w' && playerColor === 'b') ||
-                (game.turn() === 'b' && playerColor === 'w')) return false;
+            if (piece.search(playerColor) === -1) return false;
+            if (game.turn() !== playerColor) return false;
         }
 
         function onDrop (source, target) {
             var move = game.move({ from: source, to: target, promotion: 'q' });
-            
             if (move === null) return 'snapback';
 
-            // Send move to server
+            removeHighlights();
             socket.emit('move', move);
             checkGameOver();
             startTimer();
             updateStatus();
         }
 
-        // Receive move from friend
         socket.on('move', function(move) {
             game.move(move);
             board.position(game.fen());
@@ -115,7 +159,6 @@
             updateStatus();
         });
 
-        // Rematch logic
         function requestRematch() {
             socket.emit('rematch-request');
         }
@@ -123,27 +166,16 @@
         socket.on('rematch-reset', function() {
             game.reset();
             board.start();
-            whiteTime = 600; blackTime = 600;
-            updateTimerDisplay('whiteTimer', 600);
-            updateTimerDisplay('blackTimer', 600);
-            if (timerInterval) clearInterval(timerInterval);
             document.getElementById('winOverlay').style.display = 'none';
-            updateStatus();
+            document.getElementById('overlay').style.display = 'flex';
+            if (timerInterval) clearInterval(timerInterval);
         });
 
         function checkGameOver() {
             if (game.game_over() || whiteTime <= 0 || blackTime <= 0) {
-                let msg = "";
-                if (game.in_checkmate()) {
-                    msg = game.turn() === 'w' ? "BLACK WINS!" : "WHITE WINS!";
-                } else if (whiteTime <= 0) {
-                    msg = "BLACK WINS! (Time)";
-                } else if (blackTime <= 0) {
-                    msg = "WHITE WINS! (Time)";
-                } else {
-                    msg = "DRAW!";
-                }
-                
+                let msg = game.in_checkmate() ? (game.turn() === 'w' ? "BLACK WINS!" : "WHITE WINS!") : "DRAW!";
+                if (whiteTime <= 0) msg = "BLACK WINS (Time)";
+                if (blackTime <= 0) msg = "WHITE WINS (Time)";
                 document.getElementById('winMessage').innerText = msg;
                 document.getElementById('winOverlay').style.display = 'flex';
                 clearInterval(timerInterval);
@@ -171,18 +203,15 @@
             document.getElementById('status').innerText = `${turn} | Playing as ${playerColor === 'w' ? 'White' : 'Black'}`;
         }
 
-        // Initialize Board
         board = ChessBoard('myBoard', {
             draggable: true,
             position: 'start',
             orientation: playerColor === 'w' ? 'white' : 'black',
             onDragStart: onDragStart,
             onDrop: onDrop,
+            onMouseoverSquare: onMouseoverSquare,
+            onMouseoutSquare: onMouseoutSquare,
             pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-        });
-
-        socket.on('connect', () => { 
-            updateStatus();
         });
     </script>
 </body>
