@@ -16,16 +16,31 @@ app.get('/play/:color', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('A player connected:', socket.id);
-
-    // Join the main game room
     socket.join('game-room');
 
-    // 1. Listen for the White player choosing the time
     socket.on('set-time', (seconds) => {
-        // Broadcast the chosen time to both players
         io.to('game-room').emit('apply-time', seconds);
     });
+
+    socket.on('move', (move) => {
+        socket.to('game-room').emit('move', move);
+    });
+
+    // --- ADD THIS SECTION ---
+    socket.on('concede', (color) => {
+        // Tells both players who conceded
+        io.to('game-room').emit('player-conceded', color);
+    });
+    // ------------------------
+
+    socket.on('rematch-request', () => {
+        io.to('game-room').emit('rematch-reset');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Player disconnected');
+    });
+});
 
     // 2. Listen for moves
     socket.on('move', (move) => {
@@ -48,3 +63,4 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
