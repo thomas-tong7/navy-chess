@@ -7,22 +7,19 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve the static files from the 'public' folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-io.on('connection', (socket) => {
-    console.log('A player connected:', socket.id);
+// This allows the /play/white and /play/black URLs to work
+app.get('/play/:color', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-    // Join a specific game room (simple version: everyone is in one room)
+io.on('connection', (socket) => {
     socket.join('game-room');
 
-    socket.on('move', (move) => {
-        // Send the move to the other player in the room
-        socket.to('game-room').emit('move', move);
-    });
-
-    socket.on('disconnect', () => {
-        console.log('Player disconnected');
+    socket.on('move', (data) => {
+        // Data now includes the move AND the color of the player
+        socket.to('game-room').emit('move', data);
     });
 });
 
