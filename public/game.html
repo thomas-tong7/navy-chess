@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Navy Chess - Match</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <style>
+        :root { --navy-dark: #001e43; --accent: #00a8ff; --pale-blue: #a2c2e1; --dark-blue: #2e5a88; }
+        body { background: var(--navy-dark); color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 10px; overflow: hidden; }
+        
+        /* Board Theme */
+        .white-1e1d7 { background-color: var(--pale-blue) !important; } 
+        .black-3c403 { background-color: var(--dark-blue) !important; }
+        .highlight-move { box-shadow: inset 0 0 3px 3px rgba(0, 0, 0, .15); border-radius: 50%; width: 20px; height: 20px; margin: 30%; background: rgba(0,0,0,0.15); }
+
+        #myBoard { width: 90vw; max-width: 400px; border: 4px solid #1e3a5f; border-radius: 8px; }
+        .info-panel { background: #002d62; padding: 15px; border-radius: 12px; margin-top: 15px; width: 90vw; max-width: 400px; display: flex; justify-content: space-between; box-sizing: border-box; }
+        .timer { font-size: 24px; font-weight: bold; font-family: monospace; color: var(--accent); }
+        .concede-btn { background: #ff4757; color: white; border: none; padding: 5px 10px; font-size: 11px; font-weight: bold; border-radius: 4px; cursor: pointer; display: none; }
+
+        /* Overlays */
+        #overlay, #winOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 30, 67, 0.98); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; }
+        #winOverlay { display: none; }
+        .card { background: #002d62; padding: 30px; border-radius: 20px; border: 2px solid var(--accent); width: 80%; max-width: 300px; }
+        .btn { background: var(--accent); color: white; border: none; padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <div class="card">
+            <h2 style="margin-top:0">Match Settings</h2>
+            <p id="waitMsg">Waiting for White to pick time...</p>
+            <div id="whiteControls" style="display:none">
+                <button class="btn" onclick="setTime(600)">10 Mins Each</button>
+                <button class="btn" onclick="setTime(300)">5 Mins Each</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="winOverlay">
+        <div class="card">
+            <h1 id="winMessage">WINS!</h1>
+            <p id="winReason" style="color: #81a1c1;">Checkmate</p>
+            <button class="btn" onclick="requestRematch()">RE-MATCH</button>
+            <a href="/" style="color:white; font-size:12px;">Back to Home</a>
+        </div>
+    </div>
+
+    <div id="myBoard"></div>
+
+    <div class="info-panel">
+        <div>WHITE <div id="whiteTimer" class="timer">10:00</div><button id="btnW" class="concede-btn" onclick="concede('w')">CONCEDE</button></div>
+        <div style="text-align: right;">BLACK <div id="blackTimer" class="timer">10:00</div><button id="btnB" class="concede-btn" onclick="concede('b')">CONCEDE</button></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io();
+        var board = null, game = new Chess();
+        const playerColor = window.location.pathname.includes('black') ? 'b' : 'w';
+        var whiteTime = 600, blackTime = 600, timerInterval = null;
+
+        if(playerColor === 'w') {
+            document.getElementById('whiteControls').style.display = 'block';
+            document.getElementById('waitMsg').style.display = 'none';
+            document.getElementById('btnW').style.display = 'block';
+        } else {
+            document.getElementById('btnB').style.display = 'block';
+        }
+
+        function setTime(s) { socket.emit('set-time', s); }
+        socket.on('apply-time', (s) => {
+            whiteTime = s; blackTime = s;
+            updateTimerDisplay('whiteTimer', s); updateTimerDisplay('blackTimer', s);
+            document.getElementById('overlay').style.display = 'none';
+        });
+
+        function concede(c) { if(confirm("Concede match?")) socket.emit('concede', c); }
+        socket.on('player-conceded', (c) => showVictory(c === 'w' ? "BLACK WINS!" : "WHITE WINS!", "Opponent Resigned"));
+
+        function removeHighlights() { $('#myBoard .square-55d63').children('.highlight-move').remove(); }
+        function highlightSquare(s) { $('#myBoard .square-' + s).append('<div class="highlight-move"></div>'); }
+
+        function onMouseoverSquare (s, p) {
+            if (!p || p.search(playerColor) === -1 || game.turn() !== playerColor) return;
+            var moves = game.moves({ square: s, verbose: true });
+            moves.forEach(m => highlightSquare(m.to));
+        }
+
+        function onDragStart (s, p) { if (game.game_over() || p.search(playerColor) === -1 || game.turn() !== playerColor) return false; }
+        function onDrop (s, t) {
+            var m = game.move({ from: s, to: t, promotion: 'q' });
+            if (m === null) return 'snapback';
+            removeHighlights(); socket.emit('move', m);
+            checkGameOver(); startTimer();
+        }
+
+        socket.on('move', (m) => { game.move(m); board.position(game.fen()); checkGameOver(); startTimer(); });
+
+        function requestRematch() { socket.emit('rematch-request'); }
+        socket.on('rematch-reset', () => location.reload()); // Reload is easiest way to reset everything
+
+        function showVictory(m, r) {
+            document.getElementById('winMessage').innerText = m;
+            document.getElementById('winReason').innerText = r;
+            document.getElementById('winOverlay').style.display = 'flex';
+            clearInterval(timerInterval);
+        }
+
+        function checkGameOver() {
+            if (game.game_over()) {
+                let m = game.in_checkmate() ? (game.turn() === 'w' ? "BLACK WINS!" : "WHITE WINS!") : "DRAW!";
+                showVictory(m, game.in_checkmate() ? "Checkmate" : "Draw");
+            } else if (whiteTime <= 0 || blackTime <= 0) {
+                showVictory(whiteTime <= 0 ? "BLACK WINS!" : "WHITE WINS!", "Time Out");
+            }
+        }
+
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (game.turn() === 'w') whiteTime--; else blackTime--;
+                updateTimerDisplay('whiteTimer', whiteTime); updateTimerDisplay('blackTimer', blackTime);
+                if (whiteTime <= 0 || blackTime <= 0) checkGameOver();
+            }, 1000);
+        }
+
+        function updateTimerDisplay(id, t) {
+            let m = Math.floor(Math.max(0, t) / 60);
+            let s = Math.max(0, t) % 60;
+            document.getElementById(id).innerText = `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        board = ChessBoard('myBoard', {
+            draggable: true, position: 'start',
+            orientation: playerColor === 'w' ? 'white' : 'black',
+            onDragStart: onDragStart, onDrop: onDrop,
+            onMouseoverSquare: onMouseoverSquare, onMouseoutSquare: removeHighlights,
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+    </script>
+</body>
+</html>
