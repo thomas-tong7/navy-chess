@@ -2,50 +2,67 @@
 <html>
 <head>
     <title>Navy Chess Pro</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <style>
         :root { --navy-dark: #001e43; --navy-light: #003366; --accent: #00a8ff; }
-        body { background-color: var(--navy-dark); color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; overflow: hidden; }
         
-        /* Blue Board Theme */
-        .white-1e1d7 { background-color: #70a1ff !important; }
-        .black-3c403 { background-color: #003366 !important; }
+        body { 
+            background-color: var(--navy-dark); color: white; font-family: -apple-system, sans-serif; 
+            display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; 
+            overflow: hidden; height: 100vh; justify-content: center;
+        }
+
+        /* 🔵 CUSTOM BLUE BOARD COLORS */
+        .white-1e1d7 { background-color: #70a1ff !important; } /* Light Blue Squares */
+        .black-3c403 { background-color: #003366 !important; } /* Dark Blue Squares */
         
-        #myBoard { width: 90vw; max-width: 400px; border: 4px solid #002d62; border-radius: 8px; }
+        #myBoard { width: 90vw; max-width: 400px; border: 4px solid #002d62; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         
-        .info-panel { background: #002d62; padding: 15px; border-radius: 12px; margin-top: 20px; width: 90vw; max-width: 400px; display: flex; justify-content: space-between; box-sizing: border-box; }
-        .timer { font-size: 22px; font-weight: bold; font-family: monospace; color: var(--accent); }
+        .info-panel { 
+            background: #002d62; padding: 15px; border-radius: 12px; 
+            margin-top: 15px; width: 90vw; max-width: 400px; display: flex; 
+            justify-content: space-between; box-sizing: border-box; border: 1px solid #1e3a5f;
+        }
+        .timer { font-size: 24px; font-weight: bold; font-family: monospace; color: var(--accent); }
+        #status { margin-top: 10px; font-size: 14px; color: #81a1c1; text-transform: uppercase; letter-spacing: 1px; }
 
         /* Victory Overlay */
         #winOverlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 30, 67, 0.95);
+            background: rgba(0, 30, 67, 0.96);
             display: none; flex-direction: column; align-items: center; justify-content: center;
             z-index: 100; text-align: center;
         }
-        .win-card { background: #002d62; padding: 40px; border-radius: 20px; border: 2px solid var(--accent); }
-        .rematch-btn { background: var(--accent); color: white; border: none; padding: 15px 30px; font-size: 18px; font-weight: bold; border-radius: 10px; cursor: pointer; margin-top: 20px; }
+        .win-card { background: #002d62; padding: 40px; border-radius: 20px; border: 2px solid var(--accent); box-shadow: 0 0 20px var(--accent); }
+        .rematch-btn { 
+            background: var(--accent); color: white; border: none; padding: 15px 40px; 
+            font-size: 18px; font-weight: bold; border-radius: 10px; cursor: pointer; margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        .rematch-btn:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
     <div id="winOverlay">
         <div class="win-card">
-            <h1 id="winMessage">WHITE WINS!</h1>
-            <p>Game Over</p>
+            <h1 id="winMessage" style="margin: 0; font-size: 32px;">WHITE WINS!</h1>
+            <p style="color: #81a1c1;">Checkmate</p>
             <button class="rematch-btn" onclick="requestRematch()">RE-MATCH</button>
         </div>
     </div>
 
-    <h2>NAVY CHESS</h2>
+    <h2 style="margin: 0 0 10px 0; letter-spacing: 3px;">NAVY CHESS</h2>
+    
     <div id="myBoard"></div>
 
     <div class="info-panel">
         <div>WHITE <div id="whiteTimer" class="timer">10:00</div></div>
         <div style="text-align: right;">BLACK <div id="blackTimer" class="timer">10:00</div></div>
     </div>
-    <p id="status">Waiting...</p>
+
+    <p id="status">Connecting...</p>
 
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
@@ -56,37 +73,49 @@
         const socket = io();
         var board = null;
         var game = new Chess();
+        
+        // 1. DETERMINE ROLE FROM URL
         const path = window.location.pathname;
         const playerColor = path.includes('black') ? 'b' : 'w';
         
         var whiteTime = 600, blackTime = 600;
         var timerInterval = null;
 
+        // Prevent illegal moves or moving opponent's pieces
         function onDragStart (source, piece) {
             if (game.game_over()) return false;
+            
+            // Only move your own color
             if ((playerColor === 'w' && piece.search(/^b/) !== -1) ||
                 (playerColor === 'b' && piece.search(/^w/) !== -1)) return false;
+            
+            // Only move when it's your turn
             if ((game.turn() === 'w' && playerColor === 'b') ||
                 (game.turn() === 'b' && playerColor === 'w')) return false;
         }
 
         function onDrop (source, target) {
             var move = game.move({ from: source, to: target, promotion: 'q' });
+            
             if (move === null) return 'snapback';
 
+            // Send move to server
             socket.emit('move', move);
             checkGameOver();
             startTimer();
+            updateStatus();
         }
 
+        // Receive move from friend
         socket.on('move', function(move) {
             game.move(move);
             board.position(game.fen());
             checkGameOver();
             startTimer();
+            updateStatus();
         });
 
-        // REMATCH LOGIC
+        // Rematch logic
         function requestRematch() {
             socket.emit('rematch-request');
         }
@@ -99,14 +128,21 @@
             updateTimerDisplay('blackTimer', 600);
             if (timerInterval) clearInterval(timerInterval);
             document.getElementById('winOverlay').style.display = 'none';
-            document.getElementById('status').innerText = "Game Reset!";
+            updateStatus();
         });
 
         function checkGameOver() {
-            if (game.game_over()) {
+            if (game.game_over() || whiteTime <= 0 || blackTime <= 0) {
                 let msg = "";
-                if (game.in_checkmate()) msg = game.turn() === 'w' ? "BLACK WINS!" : "WHITE WINS!";
-                else msg = "DRAW!";
+                if (game.in_checkmate()) {
+                    msg = game.turn() === 'w' ? "BLACK WINS!" : "WHITE WINS!";
+                } else if (whiteTime <= 0) {
+                    msg = "BLACK WINS! (Time)";
+                } else if (blackTime <= 0) {
+                    msg = "WHITE WINS! (Time)";
+                } else {
+                    msg = "DRAW!";
+                }
                 
                 document.getElementById('winMessage').innerText = msg;
                 document.getElementById('winOverlay').style.display = 'flex';
@@ -125,11 +161,17 @@
         }
 
         function updateTimerDisplay(id, time) {
-            let mins = Math.floor(time / 60);
-            let secs = time % 60;
+            let mins = Math.floor(Math.max(0, time) / 60);
+            let secs = Math.max(0, time) % 60;
             document.getElementById(id).innerText = `${mins}:${secs.toString().padStart(2, '0')}`;
         }
 
+        function updateStatus() {
+            const turn = game.turn() === 'w' ? "White's Turn" : "Black's Turn";
+            document.getElementById('status').innerText = `${turn} | Playing as ${playerColor === 'w' ? 'White' : 'Black'}`;
+        }
+
+        // Initialize Board
         board = ChessBoard('myBoard', {
             draggable: true,
             position: 'start',
@@ -137,6 +179,10 @@
             onDragStart: onDragStart,
             onDrop: onDrop,
             pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+
+        socket.on('connect', () => { 
+            updateStatus();
         });
     </script>
 </body>
