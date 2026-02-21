@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Navy Chess Multiplayer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <style>
+        body { 
+            background-color: #001e43; color: white; font-family: sans-serif; 
+            display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px;
+        }
+        .header { margin: 10px 0; text-align: center; }
+        #myBoard { width: 90vw; max-width: 400px; border: 4px solid #002d62; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .info-panel { 
+            background: #002d62; padding: 15px; border-radius: 12px; 
+            margin-top: 20px; width: 90vw; max-width: 400px; display: flex; 
+            justify-content: space-between; box-sizing: border-box;
+        }
+        .timer { font-size: 22px; font-weight: bold; font-family: monospace; }
+        #status { margin-top: 15px; font-style: italic; color: #81a1c1; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>NAVY CHESS</h2>
+    </div>
+
+    <div id="myBoard"></div>
+
+    <div class="info-panel">
+        <div>White <div id="whiteTimer" class="timer">10:00</div></div>
+        <div style="text-align: right;">Black <div id="blackTimer" class="timer">10:00</div></div>
+    </div>
+
+    <p id="status">Connecting to server...</p>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io(); // Connect!
+        var board = null;
+        var game = new Chess();
+
+        // When you pick up a piece
+        function onDragStart (source, piece) {
+            if (game.game_over()) return false;
+            // Only allow moves for the current side (simplified for this version)
+        }
+
+        // When you drop a piece
+        function onDrop (source, target) {
+            var move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q' 
+            });
+
+            if (move === null) return 'snapback';
+
+            // 3. SEND the move to your friend via the server
+            socket.emit('move', move);
+            updateStatus();
+        }
+
+        // 4. RECEIVE a move from your friend via the server
+        socket.on('move', function(move) {
+            game.move(move);
+            board.position(game.fen()); // Update the visual board
+            updateStatus();
+        });
+
+        function updateStatus() {
+            let status = game.turn() === 'w' ? "White's Turn" : "Black's Turn";
+            if (game.in_checkmate()) status = "Checkmate!";
+            document.getElementById('status').innerText = status;
+        }
+
+        // Initialize the board
+        board = ChessBoard('myBoard', {
+            draggable: true,
+            position: 'start',
+            onDrop: onDrop,
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+
+        socket.on('connect', () => {
+            document.getElementById('status').innerText = "Connected! Ready to play.";
+        });
+    </script>
+</body>
+</html>
