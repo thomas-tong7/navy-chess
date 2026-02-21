@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Navy Chess - Home</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            background-color: #001e43; color: white; font-family: sans-serif; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            height: 100vh; margin: 0; 
+        }
+        .container { text-align: center; background: #002d62; padding: 40px; border-radius: 20px; border: 2px solid #00a8ff; box-shadow: 0 0 20px rgba(0,168,255,0.3); }
+        h1 { letter-spacing: 5px; margin-bottom: 30px; }
+        .btn { 
+            display: block; width: 220px; padding: 15px; margin: 15px auto;
+            text-decoration: none; font-weight: bold; border-radius: 10px; transition: 0.3s;
+            text-align: center;
+        }
+        .white-btn { background: #f0f0f0; color: #001e43; }
+        .black-btn { background: #1a1a1a; color: white; border: 1px solid #444; }
+        .btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NAVY CHESS</h1>
+        <p style="color: #81a1c1;">Choose your side to start the battle:</p>
+        <a href="/play/white" class="btn white-btn">PLAY AS WHITE</a>
+        <a href="/play/black" class="btn black-btn">PLAY AS BLACK</a>
+    </div>
+</body>
+</html>
